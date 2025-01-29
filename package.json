@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.2",
+    "@supabase/supabase-js": "^2.48.1",
     "@tsparticles/engine": "^3.7.1",
     "@tsparticles/react": "^3.0.0",
     "@tsparticles/slim": "^3.7.1",

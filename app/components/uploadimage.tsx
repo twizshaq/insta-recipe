@@ -121,14 +121,14 @@ export default function UploadImage({
         {selectedImages.length === 0 && (
           <>
             <button 
-              className={`flex items-center text-white font-bold py-[10px] pl-[20px] pr-[25px] rounded-full gap-[10px] ${ACCENT_BG_COLORS[accent]}`} 
+              className={`flex items-center text-white font-bold py-[10px] pl-[20px] pr-[25px] rounded-full gap-[10px] z-[0] ${ACCENT_BG_COLORS[accent]}`} 
               onClick={handleUploadClick}
             >
               <span className="text-[1.4rem]"><LuCopyPlus /></span>
               Upload
             </button>
             <button 
-              className={`flex items-center text-white font-bold py-[10px] pl-[15px] pr-[25px] rounded-full gap-[10px] ${ACCENT_BG_COLORS[accent]}`} 
+              className={`flex items-center text-white font-bold py-[10px] pl-[15px] pr-[25px] rounded-full gap-[10px] z-[0] ${ACCENT_BG_COLORS[accent]}`} 
               onClick={handleCameraClick}
             >
               <span className="text-[1.7rem]"><TbCamera /></span>
@@ -139,7 +139,7 @@ export default function UploadImage({
       </div>
 
       {selectedImages.length > 0 && (
-        <div className="relative my-[0px] flex w-80 h-[275px] z-[9]">
+        <div className="relative my-[0px] flex w-80 h-[275px] z-[0]">
           {selectedImages.map((image, index) => (
             <div
               key={image.url}
@@ -156,7 +156,7 @@ export default function UploadImage({
                 className={`absolute top-[7px] ${
                   index === 2 ? 'left-1/2 -translate-x-1/2' :
                   index === 1 ? 'left-[7px]' : 'right-[7px]'
-                } bg-red-500 bg-opacity-[.9] text-white rounded-[7px] p-[2px] text-xs hover:bg-red-700 focus:outline-none z-[999]`}
+                } bg-red-500 bg-opacity-[.9] text-white rounded-[7px] p-[2px] text-xs hover:bg-red-700 focus:outline-none z-[2]`}
                 aria-label={`Remove image ${index + 1}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="#FFFFFF">
@@ -171,7 +171,7 @@ export default function UploadImage({
       {selectedImages.length > 0 && (
         <div className="mt-4 flex flex-col items-center gap-2">
           <button
-            className={`absolute right-[33px] top-[120px] flex items-center text-white font-bold rounded-full gap-[10px] z-[9] border[1.5px] transition-all ${
+            className={`absolute right-[33px] top-[120px] flex items-center text-white font-bold rounded-full gap-[10px] z-[3] border[1.5px] transition-all ${
               selectedImages.length < maxImages 
                 ? ``
                 : "text-[#6f6f6f]"

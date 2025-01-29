@@ -479,13 +479,13 @@ export default function AccountPage() {
                 {!result ? (
                 <div className="relative flex flex-col items-center self-center mt-auto mb-auto max-w-[90%] gap-[30px] pt-[90px] pb-[20px]">
                     {/* Loading Popup */}
-                    <div className="flex justify-center items-center absolute w-[451px] max-w-[100%] h-[275px] max-h-[100%] ml-[.1px] mb-[228px] rounded-[46px] bg-none my-dashed-border-sec">
+                    <div className="flex justify-center items-center absolute w-[451px] max-w-[100%] h-[275px] max-h-[100%] ml-[.1px] mb-[228px] rounded-[46px] z-[10] bg-none my-dashed-border-sec pointer-events-none">
                     </div>
                     
                     {loading && selectedImages.length > 0 && (
-                        <div className="flex justify-center items-center absolute w-[451px] max-w-[100%] h-[275px] max-h-[100%] ml-[.1px] mb-[228px] rounded-[46px] bg-black backdrop-blur-[5px] bg-opacity-[.4] overflow-hidden">
+                        <div className="flex justify-center items-center absolute w-[451px] max-w-[100%] h-[275px] max-h-[100%] ml-[.1px] mb-[228px] rounded-[46px] bg-black backdrop-blur-[5px] bg-opacity-[.4] overflow-hidden z-[5]">
                         <p className={`absolute font-extrabold text-[1.8rem] ${getAccentClass()}`}>Analyzing</p>
-                            <div className={`w-[414px] max-mobile2:max-w-[90%] h-[239px] max-h-[100%] rounded-[28px] blur-[17px] z-[10] ${ACCENT_LOADING_CLASSES[activeAccent]}`}
+                            <div className={`w-[414px] max-mobile2:max-w-[90%] h-[239px] max-h-[100%] rounded-[28px] blur-[17px] ${ACCENT_LOADING_CLASSES[activeAccent]}`}
                             style={{ backgroundClip: "padding-box" }}>
                             </div>
                             <span className="absolute"><SparklesPreview/></span>
