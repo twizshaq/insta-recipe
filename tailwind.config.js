@@ -12,6 +12,7 @@ module.exports = {
     			custom: '1000px',
     			mobile: '600px',
     			mobile2: '495px',
+				mobile3: '860px',
     			whenwrap: '1420px',
     			whenwrap2: '1161px'
     		},

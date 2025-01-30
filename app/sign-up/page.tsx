@@ -126,17 +126,17 @@ const AnalyticsLoader = dynamic(
     // };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[100dvh]">
-        <div className="flex p-[20px] h-[700px] items-center rounded-[50px] gap-[40px]">
-            <div className="justify-center flex mt-[30px]" />
-            <div className="flex flex-col items-center justify-center h-[660px] w-[400px] bg-green-500 max-w-[90%] rounded-[50px] relative">
-            <p className="absolute mb-[550px] mr-[255px] fontchange text-center text-[1.7rem] font-extrabold leading-[30px]">
+        <div className="flex flex-col items-center justify-center min-h-[100dvh] overflow-x-hidden">
+        <div className="flex flex-wrap p-[30px] h-fit w-fit items-center justify-center rounded-[40px] mt-[30px] mb-[50px]">
+            <div className="justify-center items-center flex mt-[30px]" />
+            <div className="flex flex-col items-start justify-start h-[660px] max-mobile3:h-[300px] w-[400px] max-w-[85%] bg-green-500 rounded-[50px] max-mobile3:mb-[50px]">
+            <p className=" ml-[30px] mt-[25px] fontchange text-center text-[1.7rem] font-extrabold leading-[30px]">
                 Insta <br /> Recipe
             </p>
-            <p className="absolute font-bold text-center text-[2rem] z-[5]">
+            {/* <p className="self-center font-bold text-center text-[2rem] z-[5]">
                 Get started with <br />
                 Insta Recipe!
-            </p>
+            </p> */}
             </div>
 
             <div className="flex flex-col items-center">
@@ -305,6 +305,7 @@ const AnalyticsLoader = dynamic(
             )}
             </div>
         </div>
+        {/* <p className="text-white text-[.7rem] self-center font-extrabold mb-[7px]">© Insta Recipe 2025</p> */}
         </div>
     );
 }
