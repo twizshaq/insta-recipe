@@ -72,8 +72,20 @@ export default function AccountPage() {
     const [showRight, setShowRight] = useState(true);
     const [hoveringAnalyze, setHoveringAnalyze] = useState(false);
     const [hoveringViewMore, setHoveringViewMore] = useState(false);
+    const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
+    const [recipeToDelete, setRecipeToDelete] = useState<null | any>(null);
 
     const [checkedIngredients, setCheckedIngredients] = useState<boolean[]>([]);
+
+        const [savedRecipes, setSavedRecipes] = useState<
+        Array<{
+            id: string;
+            name: string;
+            description: string;
+            ingredients: string[];
+            instructions: Array<{ number: string; title: string; description: string }>;
+        }>
+        >([]);
 
     // Update when result changes
 
@@ -197,6 +209,14 @@ export default function AccountPage() {
                 throw new Error("Invalid response format from server");
             }
             setResult(data);
+
+            setSavedRecipes(prev => [
+            ...prev,
+            {
+                id: Date.now().toString(),
+                ...data
+            }
+            ]);
 
         } catch (err: any) {
             console.error("Analysis Error:", err);
@@ -359,6 +379,33 @@ export default function AccountPage() {
     fetchImages();
 }, [result]);
 
+    const truncateDescription = (description: string, maxLength: number = 3) => {
+    if (!description) {
+        return "";
+    }
+    const words = description.split(" ");
+    if (words.length > maxLength) {
+        return `${words.slice(0, maxLength).join(" ")}...`;
+    }
+    return description;
+    };
+
+    const summarizeName = (name: string) => {
+    if (!name) {
+        return "";
+    }
+    const separators = [" with ", " and "]; // Separators to identify main name
+    let mainPart = name;
+    for (const separator of separators) {
+        const index = name.indexOf(separator);
+        if (index !== -1) {
+            mainPart = name.substring(0, index);
+            break;
+        }
+    }
+    return mainPart;
+    };
+
     return (
         <div className="flex flex-col w-full relative overflow-x-hidden">
         {/* Menu Toggle Button (visible on small screens only) */}
@@ -405,25 +452,114 @@ export default function AccountPage() {
                 <span className="absolute mr-[20px] mt-[12px] text-[1.6rem] font-extrabold"><IoSearchOutline /></span>
             </div>
             <div className="flex flex-col h-[100dvh] w-[100%] items-center gap-[20px] flex-1 overflow-y-auto">
-                <button className="flex items-center min-h-[100px] w-[90%] border-[2px] border-[#ccc] rounded-[30px]">
-                    <div className="h-[70px] min-w-[70px] bg-green-400 ml-[13px] rounded-[20px]" />
-                        <div className="flex flex-col ml-[13px] items-start">
-                        <p className="font-extrabold mt-[0px] text-[1.2rem]">
-                        Recipe title
-                        </p>
-                        <p className="text-[.9rem]">Lorem, ipsum dolor</p>
+                {savedRecipes.length === 0 ? (
+                <p className="text-white text-center text-2xl font-bold mt-[50%]">
+                    No Recipes :(
+                </p>
+                ) : (
+                savedRecipes.map(recipe => (
+                    <button 
+                    key={recipe.id} 
+                    className="flex items-center min-h-[100px] w-[90%] border-[2px] border-[#ccc] rounded-[30px]"
+                    onClick={() => setResult(recipe)}
+                    >
+                    <div className="h-[70px] max-w-[70px] rounded-[20px] ml-[13px] overflow-hidden flex-shrink-0 relative">
+                        <div className="flex w-full h-1/2">
+                        {scrapedImages.slice(0, 2).map((image, index) => (
+                        <img
+                            key={index}
+                            src={image.url}
+                            alt={`${recipe.name} Image ${index + 1}`}
+                            className="w-1/2 h-full object-cover"
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = "/fallback-food-image.jpg";
+                                target.classList.add("object-contain");
+                                target.classList.add("p-2");
+                            }}
+                        />
+                    ))}
                     </div>
-                </button>
-                <button className="flex items-center min-h-[100px] w-[90%] border-[2px] border-[#ccc] rounded-[30px]">
-                    <div className="h-[70px] min-w-[70px] bg-green-400 ml-[13px] rounded-[20px]" />
-                        <div className="flex flex-col ml-[13px] items-start">
-                        <p className="font-extrabold mt-[0px] text-[1.2rem]">
-                        Recipe title
-                        </p>
-                        <p className="text-[.9rem]">Lorem, ipsum dolor</p>
+                    <div className="flex w-full h-1/2">
+                        {scrapedImages.slice(2, 4).map((image, index) => (
+                        <img
+                            key={index}
+                            src={image.url}
+                            alt={`${recipe.name} Image ${index + 3}`}
+                            className="w-1/2 h-full object-cover"
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = "/fallback-food-image.jpg";
+                                target.classList.add("object-contain");
+                                target.classList.add("p-2");
+                            }}
+                        />
+                    ))}
                     </div>
-                </button>
-            </div>
+                </div>
+                    <div className="flex absolute w-[90%] justify-end mb-[53px]">
+                        <button 
+                        className="flex gap-[3px] mr-[20px] p-[3px]"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setRecipeToDelete(recipe);
+                            setIsDeletePopupOpen(true);
+                        }}
+                        >
+                        <div className="bg-white rounded-[30px] h-[5px] w-[5px]"></div>
+                        <div className="bg-white rounded-[30px] h-[5px] w-[5px]"></div>
+                        <div className="bg-white rounded-[30px] h-[5px] w-[5px]"></div>
+                        </button>
+                    </div>
+                    <div className="flex flex-col ml-[13px] items-start mr-[40px]">
+                        <p className="font-extrabold mt-[0px] text-[1.2rem] text-left">{summarizeName(recipe.name)}</p>
+                        <p className="text-[.9rem]">{truncateDescription(recipe.description)}</p>
+                    </div>
+                    </button>
+                ))
+            )}
+                </div>
+
+                {/* Delete Confirmation Popup */}
+                {isDeletePopupOpen && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-[.5] z-50" 
+                    onClick={() => {
+                        setIsDeletePopupOpen(false);
+                        setRecipeToDelete(null);
+                    }}>
+                    <div className="bg-black border-[2px] bg-opacity-20 text-white rounded-[40px] p-6 relative w-11/12 max-w-md backdrop-blur-[30px]" 
+                        onClick={(e) => e.stopPropagation()}>
+                    <h2 className="text-[1.5rem] font-bold mb-4">Delete Recipe</h2>
+                    <p className="mb-6">Are you sure you want to delete this recipe? This action cannot be undone.</p>
+                    
+                    <div className="flex justify-end gap-4">
+                        <button 
+                        className="px-6 py-2 border font-bold border-white rounded-[30px] hover:bg-white hover:bg-opacity-10"
+                        onClick={() => {
+                            setIsDeletePopupOpen(false);
+                            setRecipeToDelete(null);
+                        }}
+                        >
+                        Cancel
+                        </button>
+                        <button 
+                        className={`px-6 py-2 font-bold rounded-[30px] ${ACCENT_BG_COLORS[activeAccent]} hover:opacity-90`}
+                        onClick={() => {
+                            if (recipeToDelete) {
+                            setSavedRecipes(prev => 
+                                prev.filter(recipe => recipe.id !== recipeToDelete.id)
+                            );
+                            setIsDeletePopupOpen(false);
+                            setRecipeToDelete(null);
+                            }
+                        }}
+                        >
+                        Delete
+                        </button>
+                    </div>
+                    </div>
+                </div>
+                )}
             {isSettings && (
             <div className="fixed inset-0 flex items-end justify-center mb-[100px]" onClick={() => setIsSettings(false)}>
                 <div className="flex flex-col items-center w-[190px] h-fit rounded-[40px] overflow-hidden backdrop-blur-[5px] bg-opacity-[.4]" onClick={(e) => e.stopPropagation()}>
