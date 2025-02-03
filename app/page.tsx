@@ -4,41 +4,31 @@ import { useState } from "react";
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { auth } from "../firebase"; // Adjust path as needed
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { SparklesPreview } from "./components/SparklesPreview";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, } from "@/app/components/accordion"
 import dynamic from "next/dynamic";
 
-const AnalyticsLoader = dynamic(() => import("@/app/components/analytics-setup"), { ssr: false });
-
 export default function Home() {
   const router = useRouter();
-  const handleGoogleLogin = async () => {
-      try {
-          const provider = new GoogleAuthProvider();
-          const result = await signInWithPopup(auth, provider);
-          const user = result.user;
-
-          // Extract the first name from the display name
-          let username = "";
-          if (user?.displayName) {
-              const displayNameParts = user.displayName.split(" ");
-              username = displayNameParts[0]; // Get first name
-          } else {
-            username = "user"
-          }
-          // Store the username in local storage or a more persistent storage mechanism.
-          localStorage.setItem("username", username);
-
-          console.log("User logged in:", user);
-          // Redirect to account page after successful login
-          router.push("/account");
-      } catch (error) {
-          console.error("Error during Google login:", error);
-      }
-  };
+  async function handleGoogleLogin() {
+  try {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        // Local dev or final URL
+        redirectTo: "http://localhost:3000/",
+      },
+    });
+    if (error) {
+      console.error("Error during Google login:", error.message);
+    }
+    // data.session contains the user's session
+  } catch (err) {
+    console.error("Unexpected error during Google login:", err);
+  }
+}
   const [activeTab, setActiveTab] = useState("Ingredients");
 
   const ingredients = [
@@ -71,7 +61,6 @@ export default function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[100dvh]">
-      <AnalyticsLoader />
       <div className="flex flex-col items-center max-w-[90%] gap-[30px] mt-[0px]">
         <p className="fontchange text-center text-[4.7rem] font-extrabold leading-[80px] mt-[100px]">Insta Recipe</p>
         <p className="text-center">Take the guesswork out of cooking simply upload a picture and uncover the recipe behind the meal.</p>
@@ -162,8 +151,8 @@ export default function Home() {
       <div className="flex flex-col items-center justify-center gap-[15px] max-w-fit mb-[40px] mt-[50px]">
         <div className="flex flex-col items-center justify-center bottom-[60px] gap-[15px]">
           <div className="flex justify-center bottom-[200px] gap-[20px] w-[90%] max-w-[450px]">
-            <button className="w-[180px] py-[10px] font-extrabold rounded-[30px] border-[2px] hover:bg-white hover:bg-opacity-[.2]">Sign Up</button>
-            <button className="bg-white text-black font w-[180px] py-[10px] font-extrabold rounded-[30px]">Login</button>
+            <Link href="/sign-up?active=signup"><button className="w-[150px] py-[10px] px-[20px] font-extrabold rounded-[30px] border-[1.5px] hover:bg-white hover:bg-opacity-[.2]">Sign Up</button></Link>
+            <Link href="/sign-up"><button className="bg-white text-black w-fit py-[11px] px-[50px] font-extrabold rounded-[30px]" >Login</button></Link>
           </div>
           <div className="flex bottom-[160px] items-center gap-[10px]">
             <div className="w-[80px] h-[1px] bg-white"></div>
@@ -171,7 +160,7 @@ export default function Home() {
             <div className="w-[80px] h-[1px] bg-white"></div>
           </div>
           <div className="flex bottom-[95px] gap-[20px]">
-            <button className="flex gap-[10px] items-center py-[10px] px-[30px] rounded-[30px] border-[2px] hover:bg-white hover:bg-opacity-[.2] font-bold" onClick={handleGoogleLogin}>
+            <button className="flex gap-[10px] items-center py-[10px] px-[30px] rounded-[30px] border-[1.5px] hover:bg-white hover:bg-opacity-[.2] font-bold" onClick={handleGoogleLogin}>
               {/* <Image src={googleicon} alt="Google Logo" width={20} height={20} /> */}
               <Image src="https://insta-recipe-assets.s3.us-east-1.amazonaws.com/google-logo.svg" alt="Google Logo svg" width={20} height={20} />
               <p>Sign in with google</p>
@@ -215,7 +204,7 @@ export default function Home() {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
-        <button className="w-fit px-[30px] py-[15px] font-extrabold rounded-[30px] border-[2px] mb-[100px] hover:bg-white hover:bg-opacity-[.2] mt-[0px]">Sign up Now for Free!</button>
+        <Link href="/sign-up?active=signup"><button className="w-fit px-[30px] py-[10px] font-extrabold rounded-[30px] border-[2px] mb-[100px] hover:bg-white hover:bg-opacity-[.2] mt-[0px]">Sign up Now for Free!</button></Link>
       <p className="text-white text-[.7rem] self-center font-extrabold mb-[7px]">© Insta Recipe 2025</p>
     </div>
   );

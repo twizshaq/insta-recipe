@@ -8,11 +8,10 @@ import { useRouter } from "next/navigation";
 import UploadImage from "@/app/components/uploadimage";
 import { LuSparkles } from "react-icons/lu";
 import { PiInfoBold } from "react-icons/pi";
+import { supabase } from "@/lib/supabaseClient";
 import { IoSearchOutline } from "react-icons/io5";
 import { SparklesPreview } from "../components/SparklesPreview";
 import { IoClose } from "react-icons/io5";
-import { auth } from "../../firebase";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 interface SelectedImage {
     file: File;
@@ -74,7 +73,6 @@ export default function AccountPage() {
     const [hoveringViewMore, setHoveringViewMore] = useState(false);
     const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
     const [recipeToDelete, setRecipeToDelete] = useState<null | any>(null);
-
     const [checkedIngredients, setCheckedIngredients] = useState<boolean[]>([]);
 
         const [savedRecipes, setSavedRecipes] = useState<
@@ -84,6 +82,7 @@ export default function AccountPage() {
             description: string;
             ingredients: string[];
             instructions: Array<{ number: string; title: string; description: string }>;
+            scrapedImages: Array<{ url: string; context?: string; alt?: string }>;
         }>
         >([]);
 
@@ -210,18 +209,47 @@ export default function AccountPage() {
             }
             setResult(data);
 
-            setSavedRecipes(prev => [
-            ...prev,
-            {
-                id: Date.now().toString(),
-                ...data
-            }
-            ]);
+            const fetchImages = async () => {
+                if (data?.name) {
+                    try {
+                        setIsScraping(true);
+                        setScrapeError("");
 
+                        const response = await fetch(
+                            `/api/scrape-images?query=${encodeURIComponent(data.name)}`
+                        );
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || "Failed to fetch images");
+                        }
+
+                        const imageData = await response.json();
+                        
+                        setSavedRecipes(prev => [
+                            ...prev,
+                            {
+                                id: Date.now().toString(),
+                                ...data,
+                                scrapedImages: imageData.images,
+                            }
+                        ]);
+
+                    } catch (err) {
+                        console.error("Image fetch error:", err);
+                        setScrapeError(err instanceof Error ? err.message : "Failed to load images");
+                    } finally {
+                        setIsScraping(false);
+                    }
+                }
+            };
+            
+            await fetchImages()
+            
         } catch (err: any) {
             console.error("Analysis Error:", err);
-            setError(err.name === 'AbortError' 
-                ? "Request timed out" 
+            setError(err.name === 'AbortError'
+                ? "Request timed out"
                 : err.message
             );
         } finally {
@@ -301,12 +329,39 @@ export default function AccountPage() {
         setIsEditing(false);
         setIsSettings(false);
     };
-
+    const [email, setEmail] = useState("");
     // Handler to save the updated username
-    const handleSaveClick = () => {
-        // Here you can add functionality to save the username to a database or backend
-        setIsEditing(true);
-        localStorage.setItem("username", username);
+    const handleSaveClick = async () => {
+    // Update the username in the user's metadata on Supabase
+    const {
+        data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+        // Not signed in → cannot update
+        router.push("/sign-up");
+        return;
+        }
+
+        const userId = session.user.id;
+
+        // Update the row in 'profiles' table
+        const { data, error } = await supabase
+        .from("profiles")
+        .update({
+            username: username,
+            email: email,
+            // ...any other fields
+        })
+        .eq("id", userId);
+
+        if (error) {
+        console.error("Error updating profile:", error);
+        return;
+        }
+        console.log("Profile updated:", data);
+
+        setIsEditing(false); // exit editing mode
     };
 
     // Handler to cancel editing
@@ -324,7 +379,7 @@ export default function AccountPage() {
     //     if (!user) {
     //         router.push("/");
     //     }
-    //     });
+    //     });k
     //     return () => unsubscribe();
     // }, [router]);
 
@@ -405,6 +460,61 @@ export default function AccountPage() {
     }
     return mainPart;
     };
+        const handleAuth = async () => {
+    // Check if there's an active session on page load
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (!session) {
+    // user is not signed in, redirect or show error
+    } else {
+        const userId = session.user.id;
+        console.log("userId for profile fetch:", userId); // VERIFY userId
+
+        // **ADD A TEMPORARY DELAY (500ms - adjust if needed):**
+        setTimeout(async () => {
+            const { data: profile, error: profileError } = await supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", userId)
+                .single();
+
+            if (profileError) {
+                console.error("Error fetching profile:", profileError);
+                console.error("Full profileError object:", profileError);
+            } else {
+                console.log("Fetched profile:", profile);
+                // For example, store in state: setUsername(profile.username);
+            }
+        }, 500); // 500 milliseconds delay (adjust as needed)
+
+    }
+
+    if (session) {
+      // console.log("User is logged in:", session.user);
+      // Optionally, fetch more user data here
+    } else {
+      // Redirect to sign in page when not logged in
+    router.push("/sign-up");
+        return
+    }
+
+    if (sessionError) {
+        console.log(sessionError)
+    }
+
+};
+
+
+        handleAuth();
+
+        // Listen for any auth events that occur after page load
+        supabase.auth.onAuthStateChange(async (_event, session) => {
+            if (session) {
+                // User is signed in; you could refresh user data here
+            } else {
+                 // Redirect to sign in page when logged out
+            router.push("/sign-up");
+            }
+        });
 
     return (
         <div className="flex flex-col w-full relative overflow-x-hidden">
@@ -453,9 +563,11 @@ export default function AccountPage() {
             </div>
             <div className="flex flex-col h-[100dvh] w-[100%] items-center gap-[20px] flex-1 overflow-y-auto">
                 {savedRecipes.length === 0 ? (
-                <p className="text-white text-center text-2xl font-bold mt-[50%]">
-                    No Recipes :(
-                </p>
+                <div className="flex items-center h-[100dvh]">
+                    <p className="text-white text-center text-2xl font-bold h-fit">
+                        No Recipes Yet
+                    </p>
+                </div>
                 ) : (
                 savedRecipes.map(recipe => (
                     <button 
@@ -463,9 +575,9 @@ export default function AccountPage() {
                     className="flex items-center min-h-[100px] w-[90%] border-[2px] border-[#ccc] rounded-[30px]"
                     onClick={() => setResult(recipe)}
                     >
-                    <div className="h-[70px] max-w-[70px] rounded-[20px] ml-[13px] overflow-hidden flex-shrink-0 relative">
+                    <div className="h-[70px] max-w-[70px] min-w-[70px] rounded-[20px] ml-[13px] overflow-hidden flex-shrink-0 relative">
                         <div className="flex w-full h-1/2">
-                        {scrapedImages.slice(0, 2).map((image, index) => (
+                        {recipe.scrapedImages?.slice(0, 2).map((image, index) => (
                         <img
                             key={index}
                             src={image.url}
@@ -481,7 +593,7 @@ export default function AccountPage() {
                     ))}
                     </div>
                     <div className="flex w-full h-1/2">
-                        {scrapedImages.slice(2, 4).map((image, index) => (
+                        {recipe.scrapedImages?.slice(2, 4).map((image, index) => (
                         <img
                             key={index}
                             src={image.url}

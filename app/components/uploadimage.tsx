@@ -149,7 +149,7 @@ export default function UploadImage({
               <img
                 src={image.url}
                 alt="Preview"
-                className="w-full h-full rounded-[18px]"
+                className="w-full h-full rounded-[18px] object-cover"
               />
               <button
                 onClick={() => onRemoveImage(index)}
