@@ -13,7 +13,6 @@ export default function Signup() {
     const [showSignUp, setShowSignUp] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
-
     const [confirmationPending, setConfirmationPending] = useState(false);
     const [signupError, setSignupError] = useState<string | null>(null);
     const [loginError, setLoginError] = useState<string | null>(null);
@@ -51,6 +50,7 @@ export default function Signup() {
         }
 
         try {
+
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
