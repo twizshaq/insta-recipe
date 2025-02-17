@@ -138,7 +138,7 @@ async function handleEmailLogin(event: React.FormEvent<HTMLFormElement>) {
     return (
         <div className="flex flex-col items-center justify-center min-h-[100dvh] overflow-x-hidden">
             <div className="flex flex-wrap p-[30px] h-fit w-fit items-center justify-center rounded-[40px] mt-[30px] mb-[50px]">
-                <StoryCarousel imageSrc={[food1.src, food2.src, food3.src]} seconds={5} />
+                <StoryCarousel imageSrc={["https://insta-recipe-assets.s3.us-east-1.amazonaws.com/food1.jpeg", "https://insta-recipe-assets.s3.us-east-1.amazonaws.com/food2.jpeg", "https://insta-recipe-assets.s3.us-east-1.amazonaws.com/food3.jpeg"]} seconds={5} />
 
                 <div className="flex flex-col items-center">
                     <div className="flex gap-[60px] mb-[40px] text-[1.3rem]">
