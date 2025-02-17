@@ -4,10 +4,8 @@ export const runtime = "edge";
 
 export async function POST(request: Request) {
     try {
-        // Parse request body
-        const { images, userDescription } = await request.json();
+        const { images = [], userDescription } = await request.json();
 
-        // Input validation
         if (!images?.length && !userDescription?.trim()) {
             return NextResponse.json(
                 { error: "Please provide either images or a description." },
@@ -15,7 +13,6 @@ export async function POST(request: Request) {
             );
         }
 
-        // Prepare the system instruction
         const systemInstruction = {
             parts: [
                 {
@@ -26,30 +23,34 @@ export async function POST(request: Request) {
                         - Key ingredients
                         - Typical preparation method
                         - Serving suggestions.
-                        3. List ingredients as bullet points:
-                            - Start each with "* "
+                        3. List ingredients:
                             - One ingredient per line
                             - Include measurements
                             - Note alternatives for dietary restrictions
-                        4. Format instructions with:
-                            - Numbered steps
+                        4. Format instructions:
+                            - Numbered steps (using a single, continuous sequence: 1, 2, 3...10, 11, 12, etc.)
                             - Step title in **bold**
                             - One step per line
                             - Exact temperatures (°F/°C)
                             - Cooking durations
-                            1. **Prep Work**: 
-                                - [Time] [Temperature] [Tools]
-                                - Example: "**1. Mise en Place**\nChill mixing bowl for 15 minutes at -18°C"
-                        5. Format response as:
+                            - Include NO extra text before the number.
+                        5. Format response *exactly* as:
                         DISH NAME: [name]
                         DESCRIPTION: [text]
-                        INGREDIENTS: [line1]\n[line2]
-                        INSTRUCTIONS: [step1]\n[step2]`
+
+                        INGREDIENTS:
+                        [line1]
+                        [line2]
+                        ...
+
+                        INSTRUCTIONS:
+                        [step1]
+                        [step2]
+                        ...`
                 }
             ]
         };
 
-        // Prepare the request payload for the Gemini API
         const contents = [
             {
                 role: "user",
@@ -65,9 +66,8 @@ export async function POST(request: Request) {
             }
         ];
 
-        // Call the Gemini API
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro-exp-02-05:generateContent?key=${process.env.GEMINI_API_KEY}`,
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -75,14 +75,13 @@ export async function POST(request: Request) {
                     systemInstruction,
                     contents,
                     generationConfig: {
-                        maxOutputTokens: 1000,
-                        temperature: 0.5
+                        maxOutputTokens: 2000,
+                        temperature: 0.4,
                     }
                 })
             }
         );
 
-        // Handle Gemini API errors
         if (!response.ok) {
             const errorData = await response.json();
             console.error("Gemini API Error:", errorData);
@@ -92,9 +91,9 @@ export async function POST(request: Request) {
             );
         }
 
-        // Parse the Gemini API response
         const result = await response.json();
         const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        console.log("Raw Gemini Response:", textResponse);
 
         if (!textResponse) {
             return NextResponse.json(
@@ -103,28 +102,52 @@ export async function POST(request: Request) {
             );
         }
 
-        // Extract information using regex
         const dishRegex = /DISH NAME:\s*(.+?)\s*DESCRIPTION:\s*([\s\S]+?)\s*INGREDIENTS:\s*([\s\S]+?)\s*INSTRUCTIONS:\s*([\s\S]+)/i;
+
         const match = textResponse.match(dishRegex);
 
         if (match) {
             // Process ingredients
-            const ingredients: string[] = match[3].trim()
+            const ingredients = match[3].trim()
                 .split('\n')
-                .map((line: string) => line.replace(/^\s*\*\s*/, '').trim())
+                .map((line: string) => line.trim())
                 .filter((line: string) => line.length > 0);
 
             // Process instructions
-            const instructionSteps = match[4].trim().split(/(?=\d+\.)/g)
-                .map((step: string) => {
-                    const cleanedStep = step.trim();
-                    const stepMatch = cleanedStep.match(/^(\d+)\.\s+\*\*(.*?)\*\*\s*(.*)/);
-                    return {
-                        number: stepMatch?.[1] || '',
-                        title: stepMatch?.[2]?.trim() || '',
-                        description: stepMatch?.[3]?.trim() || cleanedStep
-                    };
-                });
+            const instructionSteps: { number: string; title: string; description: string; }[] = [];
+            const instructionsText = match[4]?.trim();
+
+            if (instructionsText) {
+                console.log("Instructions text to parse:", instructionsText);
+
+                const instructionRegex = /^(\d+)\.\s*\*\*(.*?)\*\*\s*([\s\S]*?)(?=(\d+\.|\s*$))/gm;
+                let instructionMatch;
+
+                while ((instructionMatch = instructionRegex.exec(instructionsText)) !== null) {
+                    instructionSteps.push({
+                        number: instructionMatch[1].trim(),
+                        title: instructionMatch[2].trim(),
+                        description: instructionMatch[3].trim().replace(/\n/g, ' '),
+                    });
+                }
+
+                // Fallback (less strict)
+                if (instructionSteps.length === 0) {
+                    console.warn("No instruction steps matched, using fallback parsing");
+                    const lines = instructionsText.split('\n').filter((line: string) => line.trim().length > 0);
+
+                    for (const line of lines) {
+                        const stepMatch = line.match(/^\s*(\d+)\.\s*(.*)/);
+                        if (stepMatch) {
+                            instructionSteps.push({
+                                number: stepMatch[1],
+                                title: `Step ${stepMatch[1]}`,
+                                description: stepMatch[2].trim(),
+                            });
+                        }
+                    }
+                }
+            }
 
             return NextResponse.json({
                 name: match[1].trim() || "Unknown Dish",
@@ -132,19 +155,61 @@ export async function POST(request: Request) {
                 ingredients: ingredients,
                 instructions: instructionSteps
             });
+
         } else {
-            // Fallback parsing
-            const nameMatch = textResponse.match(/DISH NAME:\s*(.+?)\n/i);
-            const descriptionMatch = textResponse.match(/DESCRIPTION:\s*([\s\S]+)/i);
+            console.log("Fallback parsing triggered");
+            const nameMatch = textResponse.match(/DISH NAME:\s*(.+)/i);
+            const descriptionMatch = textResponse.match(/DESCRIPTION:\s*([\s\S]+?)(?:\n\n|\z)/i);
+            const ingredientsMatch = textResponse.match(/INGREDIENTS:\s*([\s\S]+?)(?:\n\n|\z)/i);
+            const instructionsMatch = textResponse.match(/INSTRUCTIONS:\s*([\s\S]+)/i);
+
+            let ingredients: string[] = [];
+            if (ingredientsMatch) {
+                ingredients = ingredientsMatch[1].trim().split('\n').map((line: string) => line.trim()).filter((line: string) => line.length > 0);
+            }
+
+            let instructions: { number: string; title: string; description: string; }[] = [];
+            if (instructionsMatch) {
+                const instructionText = instructionsMatch[1].trim();
+                const instructionRegex = /^(\d+)\.\s*\*\*(.*?)\*\*\s*([\s\S]*?)(?=(\d+\.|\s*$))/gm;
+                let instructionMatch;
+
+                while ((instructionMatch = instructionRegex.exec(instructionText)) !== null) {
+                instructions.push({
+                    number: instructionMatch[1].trim(),
+                    title: instructionMatch[2].trim(),
+                    description: instructionMatch[3].trim().replace(/\n/g, ' '),
+                    });
+                }
+
+                // Fallback for instructions if primary regex fails
+                if(instructions.length === 0){
+                    const lines = instructionText.split('\n').filter((line: string) => line.trim().length > 0);
+                    for (const line of lines) {
+                        const stepMatch = line.match(/^\s*(\d+)\.\s*(.*)/);
+                        if (stepMatch) {
+                            instructions.push({
+                                number: stepMatch[1],
+                                title: `Step ${stepMatch[1]}`,
+                                description: stepMatch[2].trim(),
+                            });
+                        }
+                    }
+                }
+            }
+
             return NextResponse.json({
-                name: nameMatch?.[1]?.trim() || "Unknown Dish",
-                description: descriptionMatch?.[1]?.trim() || textResponse,
-                ingredients: [],
-                instructions: []
+                name: nameMatch ? nameMatch[1].trim() : "Unknown Dish",
+                description: descriptionMatch ? descriptionMatch[1].trim() : "No description",
+                ingredients: ingredients,
+                instructions: instructions,
             });
         }
-    } catch (error) {
+    } catch (error) { 
         console.error("An unexpected error occurred:", error);
-        return NextResponse.json({error: "An unexpected error occurred"}, {status: 500})
+        return NextResponse.json(
+            { error: "An unexpected error occurred" },
+            { status: 500 }
+        );
     }
 }

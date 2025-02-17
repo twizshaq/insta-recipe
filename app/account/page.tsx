@@ -11,11 +11,26 @@ import { PiInfoBold } from "react-icons/pi";
 import { supabase } from "@/lib/supabaseClient";
 import { IoSearchOutline } from "react-icons/io5";
 import { SparklesPreview } from "../components/SparklesPreview";
+import { User } from '@supabase/supabase-js';
 import { IoClose } from "react-icons/io5";
+// import { getURL } from "next/dist/shared/lib/utils"; // Not needed, getPublicUrl is used
 
 interface SelectedImage {
     file: File;
     url: string;
+}
+
+interface AnalyzedFood {
+    id: number; // Use number for bigint
+    user_id: string;
+    created_at: string;
+    name: string;
+    description: string;
+    ingredients: string[];
+    instructions: Array<{ number: string; title: string; description: string }>;
+    scraped_images: Array<{ url: string; context?: string; alt?: string }>;
+    uploaded_images: string[];
+    checked_ingredients?: boolean[] | any[] | null;
 }
 
 type AccentColor = "blue" | "green" | "orange" | "pink"
@@ -25,36 +40,36 @@ const ACCENT_CLASSES: Record<AccentColor, string> = {
     green: 'imageshine-green',
     orange: 'imageshine-orange',
     pink: 'imageshine-pink',
-    };
+};
 
 const ACCENT_BG_COLORS: Record<AccentColor, string> = {
     blue: "bg-[#0a90ff]",
     green: "bg-[#1eab5d]",
     orange: "bg-[#db5415]",
     pink: "bg-[#ff0988]",
-    };
+};
 
 const ACCENT_BG_HOVER: Record<AccentColor, string> = {
     blue: "hover:bg-[#0a90ff]",
     green: "hover:bg-[#1eab5d]",
     orange: "hover:bg-[#db5415]",
     pink: "hover:bg-[#ff0988]",
-    };
+};
 
 const ACCENT_LOADING_CLASSES: Record<AccentColor, string> = {
     blue: "loading-blue",
     green: "loading-green",
     orange: "loading-orange",
     pink: "loading-pink",
-    };
+};
 
-    // Solid decoration colors keyed by accent
+// Solid decoration colors keyed by accent
 const ACCENT_DECORATION_COLORS: Record<AccentColor, string> = {
     blue: "decoration-[#0a90ff]",
     green: "decoration-[#1eab5d]",
     orange: "decoration-[#db5415]",
     pink: "decoration-[#ff0988]",
-    };
+};
 
 export default function AccountPage() {
     const [menuOpen, setMenuOpen] = useState(false);
@@ -72,28 +87,8 @@ export default function AccountPage() {
     const [hoveringAnalyze, setHoveringAnalyze] = useState(false);
     const [hoveringViewMore, setHoveringViewMore] = useState(false);
     const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
-    const [recipeToDelete, setRecipeToDelete] = useState<null | any>(null);
+    const [recipeToDelete, setRecipeToDelete] = useState<AnalyzedFood | null>(null); // Corrected type
     const [checkedIngredients, setCheckedIngredients] = useState<boolean[]>([]);
-
-        const [savedRecipes, setSavedRecipes] = useState<
-        Array<{
-            id: string;
-            name: string;
-            description: string;
-            ingredients: string[];
-            instructions: Array<{ number: string; title: string; description: string }>;
-            scrapedImages: Array<{ url: string; context?: string; alt?: string }>;
-        }>
-        >([]);
-
-    // Update when result changes
-
-    const handleNewAnalysis = () => {
-        setResult(null);
-        setSelectedImages([]);
-        setDescription("");
-        setError("");
-    };
 
     // Define maxImages
     const maxImages = 3;
@@ -101,22 +96,31 @@ export default function AccountPage() {
     // Food analysis states
     const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
     const [description, setDescription] = useState("");
-    const [result, setResult] = useState<{ name: string; description: string; ingredients: string[]; instructions: Array<{ number: string; title: string; description: string }>; } | null>(null);
+    const [result, setResult] = useState<AnalyzedFood | null>(null); // Corrected type
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
+    const [analyzedFoods, setAnalyzedFoods] = useState<AnalyzedFood[]>([]);
+    const [imageURLs, setImageURLs] = useState<string[]>([])
+
     useEffect(() => {
-        if (result?.ingredients) {
+    console.log("useEffect for checkedIngredients - result changed:", result); // Log when result changes
+    if (result?.ingredients) {
+        if (result.checked_ingredients && Array.isArray(result.checked_ingredients)) {
+            console.log("useEffect for checkedIngredients - Loading from DB:", result.checked_ingredients); // Log DB data
+            setCheckedIngredients(result.checked_ingredients);
+        } else {
+            console.log("useEffect for checkedIngredients - No checked_ingredients in DB, defaulting to unchecked."); // Log default behavior
             setCheckedIngredients(new Array(result.ingredients.length).fill(false));
         }
-    }, [result]);
+    } else {
+        console.log("useEffect for checkedIngredients - No ingredients in result, clearing checkedIngredients."); // Log clearing
+        setCheckedIngredients([]);
+    }
+}, [result]);
 
     const toggleIngredient = (index: number) => {
-        setCheckedIngredients(prev => {
-            const newState = [...prev];
-            newState[index] = !newState[index];
-            return newState;
-        });
+        handleIngredientCheckChange(index);
     };
 
     // Updated image validation
@@ -132,7 +136,7 @@ export default function AccountPage() {
 
     const handleImagesSelected = (images: File[]) => {
         // Prevent duplicates based on name and size
-        const newImages = images.filter(img => 
+        const newImages = images.filter(img =>
             !selectedImages.some(existingImg => existingImg.file.name === img.name && existingImg.file.size === img.size)
         );
 
@@ -159,9 +163,10 @@ export default function AccountPage() {
         });
     };
 
+
+
     // Enhanced error handling
     const handleAnalyze = async () => {
-        // Pass only File[] to validateImages
         const validationError = validateImages(selectedImages.map(img => img.file));
         if (validationError) {
             setError(validationError);
@@ -172,7 +177,38 @@ export default function AccountPage() {
         setError("");
         setResult(null);
 
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            // Removed: router.push("/sign-up");  // Redirect if not logged in
+            return; // The middleware handles the redirect
+        }
+
+        const userId = session.user.id; // Get the user's ID
+
         try {
+            // *** UPLOAD IMAGES TO SUPABASE STORAGE ***
+            const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB, for example
+            const uploadedImagePaths: string[] = [];
+            for (const selectedImage of selectedImages) {
+            if (selectedImage.file.size > MAX_FILE_SIZE) {
+                setError("Image file size exceeds the limit (5MB)."); // Or whatever your limit is
+                setLoading(false);
+                return; // Stop the process
+                }
+                const filePath = `${userId}/${Date.now()}_${selectedImage.file.name}`;
+                const { error: uploadError } = await supabase.storage
+                    .from("food-images") //  bucket name
+                    .upload(filePath, selectedImage.file);
+
+                if (uploadError) {
+                    console.error("Image upload error:", uploadError.message, uploadError.name, uploadError.stack); // Log more details
+                    throw new Error(`Failed to upload images: ${uploadError.message}`); // Include the message in your custom error
+                }
+                uploadedImagePaths.push(filePath);
+            }
+
+            //--- end of uploading image section
+
             const base64Images = await Promise.all(
                 selectedImages.map((selectedImage) => convertToBase64(selectedImage.file))
             );
@@ -207,7 +243,22 @@ export default function AccountPage() {
             if (!data.name || !data.description) {
                 throw new Error("Invalid response format from server");
             }
-            setResult(data);
+
+            // Use the AnalyzedFood type for the result
+            const analyzedResult: AnalyzedFood = {
+                id: 0, // Temporary ID, will be replaced by Supabase
+                user_id: userId,
+                created_at: new Date().toISOString(),
+                name: data.name,
+                description: description,
+                ingredients: data.ingredients,
+                instructions: data.instructions,
+                scraped_images: [], // Initialize, will be filled later
+                uploaded_images: uploadedImagePaths,
+            };
+
+            setResult(analyzedResult); // Set the result *before* fetching images
+
 
             const fetchImages = async () => {
                 if (data?.name) {
@@ -225,15 +276,28 @@ export default function AccountPage() {
                         }
 
                         const imageData = await response.json();
-                        
-                        setSavedRecipes(prev => [
-                            ...prev,
-                            {
-                                id: Date.now().toString(),
-                                ...data,
-                                scrapedImages: imageData.images,
-                            }
-                        ]);
+
+                        // *** SAVE TO SUPABASE ***
+                        const { error: insertError } = await supabase
+                            .from('analyzed_foods') //  Specify the type
+                            .insert({
+                                user_id: userId,
+                                name: analyzedResult.name, // Use analyzedResult
+                                description: analyzedResult.description, // Use analyzedResult
+                                ingredients: analyzedResult.ingredients, // Use analyzedResult
+                                instructions: analyzedResult.instructions, // Use analyzedResult
+                                scraped_images: imageData.images,
+                                uploaded_images: analyzedResult.uploaded_images, // Use analyzedResult
+                                checked_ingredients: [],
+                            });
+
+                        if (insertError) {
+                            console.error("Error saving analysis:", insertError);
+                            throw new Error("Failed to save analysis"); // Handle database errors
+                        } else {
+                            // refetch analyses to ensure the most updated version.
+                            fetchAnalyzedFoods();
+                        }
 
                     } catch (err) {
                         console.error("Image fetch error:", err);
@@ -243,9 +307,9 @@ export default function AccountPage() {
                     }
                 }
             };
-            
+
             await fetchImages()
-            
+
         } catch (err: any) {
             console.error("Analysis Error:", err);
             setError(err.name === 'AbortError'
@@ -256,6 +320,103 @@ export default function AccountPage() {
             setLoading(false);
         }
     };
+
+    const handleNewAnalysis = () => {
+        setResult(null);
+        setSelectedImages([]);
+        setDescription("");
+        setError("");
+        setImageURLs([]);
+        fetchAnalyzedFoods()
+    };
+
+    // Fetch analyzed foods on component mount and when user changes
+    const fetchAnalyzedFoods = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            router.push("/sign-up");
+            return;
+        }
+
+        const { data, error } = await supabase
+        .from('analyzed_foods') // Use the interface here
+        .select('*, checked_ingredients')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false }) as { data: AnalyzedFood[] | null; error: any }; // Newest first
+
+        if (error) {
+            console.error("Error fetching analyzed foods:", error);
+        } else if (data) {
+            setAnalyzedFoods(data);
+        }
+    };
+
+        interface StorageSuccessResponse {
+            data: { publicUrl: string };
+        }
+
+        interface StorageErrorResponse {
+            error: any;
+        }
+
+        type StorageResponse = StorageSuccessResponse | StorageErrorResponse;
+
+        const getFoodImage = async (path: string): Promise<string> => {
+        try {
+            const response = await supabase.storage
+                .from("food-images")
+                .getPublicUrl(path);
+
+            // Type guard to check if response contains error
+            if ('error' in response) {
+                throw response.error;
+            }
+
+            return response.data.publicUrl;
+        } catch (error) {
+            console.error("Error getting food image:", error);
+            return "";
+        }
+    };
+
+    // New useEffect for fetching analyzed foods
+    useEffect(() => {
+        fetchAnalyzedFoods();
+    }, []);
+
+    const handleDeleteRecipe = async (idToDelete: number) => {
+        const { error } = await supabase
+            .from('analyzed_foods')
+            .delete()
+            .eq('id', idToDelete);
+
+        if (error) {
+            console.error("Error deleting recipe:", error);
+        } else {
+            // Remove from local state
+            setAnalyzedFoods(prev => prev.filter(food => food.id !== idToDelete));
+            if (result && result.id == idToDelete) {
+                setResult(null);
+            }
+        }
+
+        setIsDeletePopupOpen(false);
+        setRecipeToDelete(null);
+    };
+
+
+    useEffect(() => {
+        if (result?.uploaded_images) {
+            const fetchImageURLs = async () => {
+                const urls = await Promise.all(
+                    result.uploaded_images.map((path) => getFoodImage(path))
+                );
+                setImageURLs(urls);
+            };
+
+            fetchImageURLs();
+        }
+    }, [result?.uploaded_images]);
 
     // Improved base64 conversion
     const convertToBase64 = (file: File): Promise<string> => {
@@ -310,78 +471,145 @@ export default function AccountPage() {
 
     const handleUsernameEdit = () => {
         setIsSettings(true); // Close the settings pane
-        setIsEditing(true);    // Open the edit username modal
+        setIsEditing(false);    // Open the edit username modal
     };
 
     // New state variables for username editing
-    const [isEditing, setIsEditing] = useState(true);
+    const [isEditing, setIsEditing] = useState(false);
+    const [user, setUser] = useState<User | null>(null);
     const [username, setUsername] = useState("");
+    const [tempUsername, setTempUsername] = useState("");
+    const [profileCreated, setProfileCreated] = useState(false);
+
 
     useEffect(() => {
-        const storedUsername = localStorage.getItem("username");
-        if (storedUsername) {
-            setUsername(storedUsername);
-        }
+        const { data: authListener } = supabase.auth.onAuthStateChange(
+            (_event, session) => {
+                setUser(session?.user ?? null);
+                setProfileCreated(false);  // Reset on user change
+            }
+        );
+
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
     }, []);
+
+        useEffect(() => {
+        async function fetchUserData() {
+            if (!user || profileCreated) {
+                return;
+            }
+
+            if (!user.email_confirmed_at) {
+                console.log("Email not confirmed yet. Waiting...");
+                return;
+            }
+            console.log("Email confirmed. Proceeding...");
+
+            try {
+                const { data: profile, error: profileError } = await supabase
+                    .from("profiles")
+                    .select("*") // Select all profile data (including accent_color)
+                    .eq("user_id", user.id)
+                    .single();
+
+                if (profileError && profileError.code !== "PGRST116") {
+                    console.error("Error fetching profile:", profileError);
+                    return;
+                }
+
+                if (profile) {
+                    console.log("Profile found:", profile); // Log the entire profile data
+                    setUsername(profile.username || "");
+                    if (profile.accent_color) {
+                        console.log("Fetched accent color from DB:", profile.accent_color); // Log fetched color
+                        setActiveAccent(profile.accent_color as AccentColor); // <-- ENSURE THIS IS CALLED
+                    } else {
+                        console.log("No accent_color found in profile data from DB. Defaulting to blue.");
+                        setActiveAccent("blue"); // Default to blue if not set in DB
+                    }
+                    setProfileCreated(true);
+                } else {
+                    console.log("No profile found. Creating one...");
+                    // ... (profile creation logic - leave this as is) ...
+                    setProfileCreated(true);
+                }
+            } catch (err) {
+                console.error("Unexpected error:", err);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        if (user && !profileCreated) {
+            fetchUserData();
+        }
+    }, [user, profileCreated]); // Depend on user and profileCreated
+
+
+
+    const handleAccentChange = async (newAccent: AccentColor) => {
+        setActiveAccent(newAccent); // Update local state immediately
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            console.log("No active session, cannot save accent color."); // Log if no session
+            router.push("/sign-up");
+            return;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .update({ accent_color: newAccent })
+                .eq('user_id', session.user.id);
+
+            if (error) {
+                console.error("Error UPDATING accent color in database:", error); // Detailed error log
+            } else {
+                console.log("Successfully UPDATED accent color in database to:", newAccent); // Success log
+                console.log("Update data response from Supabase:", data); // Log the data response (for debugging)
+            }
+        } catch (err) {
+            console.error("Unexpected error during accent color update:", err); // Catch any unexpected errors
+        }
+    };
 
     // Handler to toggle edit mode
     const handleEditClick = () => {
-        setIsEditing(false);
+        setIsEditing(true);
         setIsSettings(false);
+        setTempUsername(username); // Store the *current* username
     };
-    const [email, setEmail] = useState("");
-    // Handler to save the updated username
+
+
     const handleSaveClick = async () => {
-    // Update the username in the user's metadata on Supabase
-    const {
-        data: { session },
+        const {
+            data: { session },
         } = await supabase.auth.getSession();
 
         if (!session) {
-        // Not signed in → cannot update
-        router.push("/sign-up");
-        return;
+            router.push("/sign-up");
+            return;
         }
-
-        const userId = session.user.id;
-
-        // Update the row in 'profiles' table
         const { data, error } = await supabase
-        .from("profiles")
-        .update({
-            username: username,
-            email: email,
-            // ...any other fields
-        })
-        .eq("id", userId);
+            .from("profiles")
+            .update({ username: tempUsername }) // ONLY update username
+            .eq("user_id", session.user.id);
 
         if (error) {
-        console.error("Error updating profile:", error);
-        return;
+            console.error("Error updating profile:", error); // Log the full error
+        } else {
+            setUsername(tempUsername); // Update the displayed username
+            setIsEditing(false);
         }
-        console.log("Profile updated:", data);
-
-        setIsEditing(false); // exit editing mode
     };
 
-    // Handler to cancel editing
     const handleCancelClick = () => {
-        const storedUsername = localStorage.getItem("username");
-        if (storedUsername) {
-            setUsername(storedUsername);
-        }
-        setIsEditing(true);
+        setIsEditing(false);
+        // No need to fetch from localStorage; just reset tempUsername
     };
-
-    // Redirect to homepage if user is not logged in
-    // useEffect(() => {
-    //     const unsubscribe = onAuthStateChanged(auth, (user) => {
-    //     if (!user) {
-    //         router.push("/");
-    //     }
-    //     });k
-    //     return () => unsubscribe();
-    // }, [router]);
 
     // Cleanup object URLs to prevent memory leaks
     useEffect(() => {
@@ -403,118 +631,155 @@ export default function AccountPage() {
     const [scrapeError, setScrapeError] = useState("");
 
     useEffect(() => {
-    const fetchImages = async () => {
-        if (result?.name) {
-            try {
-                setIsScraping(true);
-                setScrapeError("");
-                
-                // Directly call Pinterest API
-                const response = await fetch(
-                    `/api/scrape-images?query=${encodeURIComponent(result.name)}`
-                );
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || "Failed to fetch images");
+        const fetchImages = async () => {
+            if (result?.name) {
+                try {
+                    setIsScraping(true);
+                    setScrapeError("");
+
+                    // Directly call Pinterest API
+                    const response = await fetch(
+                        `/api/scrape-images?query=${encodeURIComponent(result.name)}`
+                    );
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || "Failed to fetch images");
+                    }
+
+                    const data = await response.json();
+                    setScrapedImages(data.images);
+
+                } catch (err) {
+                    console.error("Image fetch error:", err);
+                    setScrapeError(err instanceof Error ? err.message : "Failed to load images");
+                } finally {
+                    setIsScraping(false);
                 }
-
-                const data = await response.json();
-                setScrapedImages(data.images);
-                
-            } catch (err) {
-                console.error("Image fetch error:", err);
-                setScrapeError(err instanceof Error ? err.message : "Failed to load images");
-            } finally {
-                setIsScraping(false);
             }
-        }
-    };
+        };
 
-    fetchImages();
-}, [result]);
+        fetchImages();
+    }, [result]);
 
     const truncateDescription = (description: string, maxLength: number = 3) => {
-    if (!description) {
-        return "";
-    }
-    const words = description.split(" ");
-    if (words.length > maxLength) {
-        return `${words.slice(0, maxLength).join(" ")}...`;
-    }
-    return description;
+        if (!description) {
+            return "";
+        }
+        const words = description.split(" ");
+        if (words.length > maxLength) {
+            return `${words.slice(0, maxLength).join(" ")}...`;
+        }
+        return description;
     };
 
     const summarizeName = (name: string) => {
-    if (!name) {
-        return "";
-    }
-    const separators = [" with ", " and "]; // Separators to identify main name
-    let mainPart = name;
-    for (const separator of separators) {
-        const index = name.indexOf(separator);
-        if (index !== -1) {
-            mainPart = name.substring(0, index);
-            break;
+        if (!name) {
+            return "";
         }
-    }
-    return mainPart;
-    };
-        const handleAuth = async () => {
-    // Check if there's an active session on page load
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (!session) {
-    // user is not signed in, redirect or show error
-    } else {
-        const userId = session.user.id;
-        console.log("userId for profile fetch:", userId); // VERIFY userId
-
-        // **ADD A TEMPORARY DELAY (500ms - adjust if needed):**
-        setTimeout(async () => {
-            const { data: profile, error: profileError } = await supabase
-                .from("profiles")
-                .select("*")
-                .eq("id", userId)
-                .single();
-
-            if (profileError) {
-                console.error("Error fetching profile:", profileError);
-                console.error("Full profileError object:", profileError);
-            } else {
-                console.log("Fetched profile:", profile);
-                // For example, store in state: setUsername(profile.username);
+        const separators = [" with ", " and "]; // Separators to identify main name
+        let mainPart = name;
+        for (const separator of separators) {
+            const index = name.indexOf(separator);
+            if (index !== -1) {
+                mainPart = name.substring(0, index);
+                break;
             }
-        }, 500); // 500 milliseconds delay (adjust as needed)
+        }
+        return mainPart;
+    };
+    
+    // Fix 1: Remove useEffect from handleIngredientCheckChange
+    const handleIngredientCheckChange = async (index: number) => {
+    if (!result) return;
 
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const userId = session.user.id;
+    const ingredientName = result.ingredients[index];
+
+    console.log("handleIngredientCheckChange - Ingredient:", ingredientName, "index:", index); // ADDED LOG
+
+    const { data: existingCheck, error: fetchError } = await supabase
+        .from('ingredient_checks')
+        .select()
+        .eq('analyzed_food_id', result.id)
+        .eq('ingredient_name', ingredientName)
+        .maybeSingle();
+
+    if (fetchError) {
+        console.error("Fetch error:", fetchError);
+        return;
     }
 
-    if (session) {
-      // console.log("User is logged in:", session.user);
-      // Optionally, fetch more user data here
-    } else {
-      // Redirect to sign in page when not logged in
-    router.push("/sign-up");
-        return
-    }
+    console.log("handleIngredientCheckChange - existingCheck:", existingCheck); // ADDED LOG
 
-    if (sessionError) {
-        console.log(sessionError)
-    }
+    try {
+        if (existingCheck) {
+            // Update existing check
+            const { error } = await supabase
+                .from('ingredient_checks')
+                .update({ is_checked: !existingCheck.is_checked })
+                .eq('id', existingCheck.id);
+            console.log("handleIngredientCheckChange - Updated existing check"); // ADDED LOG
+        } else {
+            // Create new check
+            const { error } = await supabase
+                .from('ingredient_checks')
+                .insert({
+                    analyzed_food_id: result.id,
+                    user_id: userId,
+                    ingredient_name: ingredientName,
+                    is_checked: true
+                });
+            console.log("handleIngredientCheckChange - Inserted new check"); // ADDED LOG
+        }
 
+        fetchIngredientChecks(result.id);
+
+    } catch (err) {
+        console.error("Operation error:", err);
+    }
 };
 
+    // Fix 3: Keep the useEffect at component level
+    useEffect(() => {
+        if (result?.id) {
+            fetchIngredientChecks(result.id);
+        }
+    }, [result?.id]);
 
-        handleAuth();
+    // In fetchIngredientChecks
+    const fetchIngredientChecks = async (foodId: number) => {
+        const { data: checks, error } = await supabase
+            .from('ingredient_checks')
+            .select('ingredient_name, is_checked')
+            .eq('analyzed_food_id', foodId);
 
-        // Listen for any auth events that occur after page load
-        supabase.auth.onAuthStateChange(async (_event, session) => {
-            if (session) {
-                // User is signed in; you could refresh user data here
-            } else {
-                 // Redirect to sign in page when logged out
-            router.push("/sign-up");
+        if (error) {
+            console.error("Error fetching checks:", error);
+            return;
+        }
+
+        if (checks) {
+            console.log("fetchIngredientChecks - Fetched checks:", checks);
+            // *** CRITICAL: Update checkedIngredients state based on fetched checks ***
+            const ingredientCheckMap = new Map();
+            checks.forEach(check => {
+                ingredientCheckMap.set(check.ingredient_name, check.is_checked);
+            });
+
+            if (!result?.ingredients) {
+            return;
             }
-        });
+
+            const newCheckedIngredients = result.ingredients.map(ingredient => {
+                return ingredientCheckMap.get(ingredient) || false; // Default to false if not found
+            });
+            setCheckedIngredients(newCheckedIngredients);
+        }
+    };
 
     return (
         <div className="flex flex-col w-full relative overflow-x-hidden">
@@ -562,26 +827,26 @@ export default function AccountPage() {
                 <span className="absolute mr-[20px] mt-[12px] text-[1.6rem] font-extrabold"><IoSearchOutline /></span>
             </div>
             <div className="flex flex-col h-[100dvh] w-[100%] items-center gap-[20px] flex-1 overflow-y-auto">
-                {savedRecipes.length === 0 ? (
+                {analyzedFoods.length === 0 ? (
                 <div className="flex items-center h-[100dvh]">
                     <p className="text-white text-center text-2xl font-bold h-fit">
                         No Recipes Yet
                     </p>
                 </div>
                 ) : (
-                savedRecipes.map(recipe => (
-                    <button 
-                    key={recipe.id} 
+                analyzedFoods.map((food) => (
+                    <button
+                    key={food.id}
                     className="flex items-center min-h-[100px] w-[90%] border-[2px] border-[#ccc] rounded-[30px]"
-                    onClick={() => setResult(recipe)}
+                    onClick={() => setResult(food)}
                     >
-                    <div className="h-[70px] max-w-[70px] min-w-[70px] rounded-[20px] ml-[13px] overflow-hidden flex-shrink-0 relative">
+                    <div className="h-[70px] max-w-[70px] min-w-[70px] rounded-[15px] ml-[13px] overflow-hidden flex-shrink-0 relative">
                         <div className="flex w-full h-1/2">
-                        {recipe.scrapedImages?.slice(0, 2).map((image, index) => (
+                        {food.scraped_images?.slice(0, 2).map((image, index) => (
                         <img
                             key={index}
                             src={image.url}
-                            alt={`${recipe.name} Image ${index + 1}`}
+                            alt={`${food.name} Image ${index + 1}`}
                             className="w-1/2 h-full object-cover"
                             onError={(e) => {
                                 const target = e.target as HTMLImageElement;
@@ -593,11 +858,11 @@ export default function AccountPage() {
                     ))}
                     </div>
                     <div className="flex w-full h-1/2">
-                        {recipe.scrapedImages?.slice(2, 4).map((image, index) => (
+                        {food.scraped_images?.slice(2, 4).map((image, index) => (
                         <img
                             key={index}
                             src={image.url}
-                            alt={`${recipe.name} Image ${index + 3}`}
+                            alt={`${food.name} Image ${index + 3}`}
                             className="w-1/2 h-full object-cover"
                             onError={(e) => {
                                 const target = e.target as HTMLImageElement;
@@ -610,22 +875,22 @@ export default function AccountPage() {
                     </div>
                 </div>
                     <div className="flex absolute w-[90%] justify-end mb-[53px]">
-                        <button 
+                        <div
                         className="flex gap-[3px] mr-[20px] p-[3px]"
                         onClick={(e) => {
                             e.stopPropagation();
-                            setRecipeToDelete(recipe);
+                            setRecipeToDelete(food);
                             setIsDeletePopupOpen(true);
                         }}
                         >
                         <div className="bg-white rounded-[30px] h-[5px] w-[5px]"></div>
                         <div className="bg-white rounded-[30px] h-[5px] w-[5px]"></div>
                         <div className="bg-white rounded-[30px] h-[5px] w-[5px]"></div>
-                        </button>
+                        </div>
                     </div>
                     <div className="flex flex-col ml-[13px] items-start mr-[40px]">
-                        <p className="font-extrabold mt-[0px] text-[1.2rem] text-left">{summarizeName(recipe.name)}</p>
-                        <p className="text-[.9rem]">{truncateDescription(recipe.description)}</p>
+                        <p className="font-extrabold mt-[0px] text-[1.2rem] text-left">{summarizeName(food.name)}</p>
+                        <p className="text-[.9rem]">{truncateDescription(food.description)}</p>
                     </div>
                     </button>
                 ))
@@ -658,11 +923,7 @@ export default function AccountPage() {
                         className={`px-6 py-2 font-bold rounded-[30px] ${ACCENT_BG_COLORS[activeAccent]} hover:opacity-90`}
                         onClick={() => {
                             if (recipeToDelete) {
-                            setSavedRecipes(prev => 
-                                prev.filter(recipe => recipe.id !== recipeToDelete.id)
-                            );
-                            setIsDeletePopupOpen(false);
-                            setRecipeToDelete(null);
+                              handleDeleteRecipe(recipeToDelete.id); // Call the delete function
                             }
                         }}
                         >
@@ -674,34 +935,38 @@ export default function AccountPage() {
                 )}
             {isSettings && (
             <div className="fixed inset-0 flex items-end justify-center mb-[100px]" onClick={() => setIsSettings(false)}>
-                <div className="flex flex-col items-center w-[190px] h-fit rounded-[40px] overflow-hidden backdrop-blur-[5px] bg-opacity-[.4]" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex w-[100%] items-center justify-center h-fit pt-[25px] pb-[10px] gap-[15px]">
-                        <button className={`w-[23px] h-[23px] bg-[#0a90ff] mb-[0px] rounded-[50px] ${activeAccent === "blue" ? "ring-2 ring-white" : ""}`} onClick={() => setActiveAccent("blue")}></button>
-                        <button className={`w-[23px] h-[23px] bg-[#1eab5d] mb-[0px] rounded-[50px] ${activeAccent === "green" ? "ring-2 ring-white" : ""}`} onClick={() => setActiveAccent('green')}></button>
-                        <button className={`w-[23px] h-[23px] bg-[#db5415] mb-[0px] rounded-[50px] ${activeAccent === "orange" ? "ring-2 ring-white" : ""}`} onClick={() => setActiveAccent('orange')}></button>
-                        <button className={`w-[23px] h-[23px] bg-[#ff0988] mb-[0px] rounded-[50px] ${activeAccent === "pink" ? "ring-2 ring-white" : ""}`} onClick={() => setActiveAccent('pink')}></button>
+                <div className="flex flex-col items-center w-[170px] h-fit rounded-[40px] border-[1.5px] overflow-hidden backdrop-blur-[5px] bg-opacity-[.4]" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex w-[150px] items-center justify-center h-fit mt-[10px] py-[13px] gap-[15px] rounded-b-[10px] rounded-t-[30px] hover:bg-white hover:bg-opacity-[.2]">
+                        <button className={`w-[20px] h-[20px] bg-[#0a90ff] rounded-[50px] ${activeAccent === "blue" ? "ring-2 ring-white" : ""}`} onClick={() => handleAccentChange("blue")}></button>
+                        <button className={`w-[20px] h-[20px] bg-[#1eab5d] rounded-[50px] ${activeAccent === "green" ? "ring-2 ring-white" : ""}`} onClick={() => handleAccentChange('green')}></button>
+                        <button className={`w-[20px] h-[20px] bg-[#db5415] rounded-[50px] ${activeAccent === "orange" ? "ring-2 ring-white" : ""}`} onClick={() => handleAccentChange('orange')}></button>
+                        <button className={`w-[20px] h-[20px] bg-[#ff0988] rounded-[50px] ${activeAccent === "pink" ? "ring-2 ring-white" : ""}`} onClick={() => handleAccentChange('pink')}></button>
                     </div>
-                    <button className="h-fit px-[25px] rounded-[30px] py-[15px] mb-[10px] hover:bg-white hover:bg-opacity-[.2] " onClick={handleEditClick}>
-                        <p className="font-extrabold">Edit Username</p>
+                    <button className="h-fit w-[150px] rounded-[10px] py-[10px] hover:bg-white hover:bg-opacity-[.2] " onClick={handleEditClick}>
+                        <p className="font-extrabold text-[.95rem]">Edit Username</p>
+                    </button>
+                    <button className="h-fit w-[150px] rounded-b-[30px] rounded-t-[10px] py-[10px] mb-[10px] hover:bg-white hover:bg-opacity-[.2]" >
+                        <p className="font-extrabold text-[#ff4949] text-[.95rem]">Logout</p>
                     </button>
                 </div>
             </div>
             )}
-            {isEditing && (
-            <button className="flex items-center border-[1.5px] h-fit py-[10px] w-fit rounded-[30px] mt-[15px] mb-[30px] px-[20px] gap-[10px] hover:bg-white hover:bg-opacity-[.1]" 
-            onClick={handleUsernameEdit}
-            >
-                        <p className="font-extrabold">{username}</p>
-                    </button>
-            )}
-            <div className="flex flex-col items-center w-[90%]">
+                <div className="flex flex-col items-center w-[90%]">
                     {!isEditing && (
+                        <button
+                            className="flex items-center border-[1.5px] h-fit py-[10px] w-fit rounded-[30px] mt-[15px] mb-[30px] px-[20px] gap-[10px] hover:bg-white hover:bg-opacity-[.1]"
+                            onClick={handleUsernameEdit}
+                        >
+                            <p className="font-extrabold">{username}</p>
+                        </button>
+                    )}
+                    {isEditing && (
                         <div className="flex flex-col items-center w-[80%] mb-[20px] gap-[10px]">
                             <input
                                 type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                className="w-full mb-2 h-[50px] border-[2px] border-[#ccc] rounded-[30px] pl-[0px] font-extrabold bg-transparent outline-none text-center "
+                                value={tempUsername} 
+                                onChange={(e) => setTempUsername(e.target.value)}
+                                className="w-full mb-2 h-[50px] border-[2px] border-[#ccc] rounded-[30px] pl-[0px] font-extrabold bg-transparent outline-none text-center"
                             />
                             <div className="flex gap-4">
                                 <button
